@@ -102,3 +102,17 @@ def patch_application(candidate_id: str, application: ApplicationUpdate):
         "status": "error",
         "message": f"Application not found for candidate ID: {candidate_id}"
     }
+
+@app.delete("/applications/{candidate_id}")
+def delete_application(candidate_id: str):
+    for app in applications:
+        if app.candidate_id == candidate_id:
+            applications.remove(app)
+            return {
+                "status": "success",
+                "message": f"Application for {candidate_id} successfully deleted"
+            }
+    return {
+        "status": "error",
+        "message": f"Application not found for candidate ID: {candidate_id}"
+    }
