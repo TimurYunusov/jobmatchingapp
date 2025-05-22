@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 from enum import Enum
 
@@ -44,3 +45,13 @@ class CompanyResponse(CompanyCreate):
 
     class Config:
         from_attributes = True
+
+class CompanyCreates(CompanyCreate):
+    pass
+
+class CompanyUpdates(CompanyCreate):
+    name: Optional[str] = None
+    
+
+class CompanyDeletes(BaseModel):
+    pass

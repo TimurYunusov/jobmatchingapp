@@ -1,6 +1,6 @@
 from enum import Enum
-from sqlalchemy import Boolean, Column, Integer, String, Float, Enum as SqlEnum
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float, Enum as SqlEnum
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -18,7 +18,7 @@ class JobPosting(Base):
     __tablename__ = "jobPosting"  
 
     id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, nullable=False)
+    company_id = Column(Integer, ForeignKey("Company.id"))
     title = Column(String, nullable=False)
     compensation_min = Column(Float, nullable=True)
     compensation_max = Column(Float, nullable=True)
@@ -30,6 +30,7 @@ class JobPosting(Base):
         SqlEnum(EmploymentType, values_callable=lambda x: [e.value for e in x], native_enum=False),
         nullable=False
     )
+    company = relationship("Company", back_populates="job_postings")
 
 class Company(Base):
     __tablename__ = "Company"  # matches your Supabase table exactly
@@ -44,3 +45,5 @@ class Company(Base):
     city = Column(String, nullable=True)
     glassdoor = Column(String, nullable=True)
     isPublic = Column(Boolean, default=False)
+
+    job_postings = relationship("JobPosting", back_populates="company")
