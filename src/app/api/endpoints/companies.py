@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from src.app.logging_config import logger  # Import the logger
 
 from src.app.db import get_db
 from src.app.models import models
@@ -14,6 +15,7 @@ def add_company(
     company: schemas.CompanyCreate,
     db: Session = Depends(get_db)
 ):
+    logger.info(f"Adding company: {company.name}")
     db_company = models.Company(**company.dict())
     db.add(db_company)
     db.commit()
@@ -32,6 +34,7 @@ def get_company(company_id: int, db: Session = Depends(get_db)):
     company = db.query(models.Company).filter(models.Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+    logger.info(f"Company retrieved: {company.name}")
     return company
 
 # ---------------- UPDATE ----------------
@@ -41,6 +44,7 @@ def update_company(
     company_update: schemas.CompanyCreate,
     db: Session = Depends(get_db)
 ):
+    logger.info(f"Updating company with ID: {company_id}")
     company = db.query(models.Company).filter(models.Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
@@ -50,15 +54,18 @@ def update_company(
 
     db.commit()
     db.refresh(company)
+    logger.info(f"Company updated: {company.name}")
     return company
 
 # ---------------- DELETE ----------------
 @router.delete("/companies/{company_id}")
 def delete_company(company_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Deleting company with ID: {company_id}")
     company = db.query(models.Company).filter(models.Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     
     db.delete(company)
     db.commit()
+    logger.info(f"Company with ID {company_id} deleted")
     return {"status": "success", "detail": f"Company {company_id} deleted"}
