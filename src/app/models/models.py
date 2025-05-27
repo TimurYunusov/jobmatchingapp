@@ -30,6 +30,7 @@ class JobPosting(Base):
         SqlEnum(EmploymentType, values_callable=lambda x: [e.value for e in x], native_enum=False),
         nullable=False
     )
+    description = Column(String, nullable=True)
     company = relationship("Company", back_populates="job_postings")
 
 class Company(Base):

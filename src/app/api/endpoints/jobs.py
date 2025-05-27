@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -5,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.app.db import get_db
 from src.app.models import models
 from src.app.schemas import schemas
+from openai import OpenAI
 
 router = APIRouter()
 
@@ -71,3 +73,52 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     db.delete(job)
     db.commit()
     return {"status": "success", "detail": f"Job posting {job_id} deleted"}
+
+# ---------- GENERATE DESCRIPTION ----------
+@router.post("/{id}/description", response_model=schemas.GenerateDescriptionResponse)
+async def generate_job_description(
+    id: int,
+    request: schemas.GenerateDescriptionRequest,
+    db: Session = Depends(get_db)
+):
+    # 1. Retrieve job posting
+    job_posting = db.query(models.JobPosting).filter(models.JobPosting.id == id).first()
+    if not job_posting:
+        raise HTTPException(status_code=404, detail="Job posting not found")
+
+    # 2. Retrieve associated company info
+    company = db.query(models.Company).filter(models.Company.id == job_posting.company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Associated company not found")
+
+    # 3. Build prompt using job and tool info
+    tools_str = ", ".join(request.required_tools)
+    prompt = (
+        f"Write a detailed job description for the position '{job_posting.title}' "
+        f"at the company '{company.name}', which operates in the '{company.industry}' industry. "
+        f"The candidate should be skilled in the following tools: {tools_str}."
+    )
+
+    # 4. Call OpenAI API
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=300
+    )
+
+    generated_description = response.choices[0].message.content.strip()
+    generated_at = datetime.now(timezone.utc)
+
+    # 5. Update DB with description
+    job_posting.description = generated_description
+    db.commit()
+    db.refresh(job_posting)
+
+    # 6. Return response
+    return schemas.GenerateDescriptionResponse(
+        job_id=job_posting.id,
+        description=generated_description,
+        generated_at=generated_at
+    )
+    

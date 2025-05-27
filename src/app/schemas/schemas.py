@@ -1,3 +1,5 @@
+from typing import List
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 from enum import Enum
@@ -19,14 +21,22 @@ class JobPostingCreate(BaseModel):
     compensation_max: float | None = None
     location_type: LocationType
     employment_type: EmploymentType
+    description: str | None = None
 
 class JobPostingResponse(JobPostingCreate):
     id: int
+    description: str | None = None
 
     class Config:
        from_attributes = True
 
+class GenerateDescriptionRequest(BaseModel):
+    required_tools: List[str]
 
+class GenerateDescriptionResponse(BaseModel):
+    job_id: int
+    description: str
+    generated_at: datetime
 
 
 class CompanyCreate(BaseModel):
