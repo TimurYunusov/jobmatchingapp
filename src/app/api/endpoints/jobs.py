@@ -1,12 +1,14 @@
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.app.logging_config import logger
 from fastapi.responses import StreamingResponse
 import openai
+from openai import OpenAI
+from fastapi.responses import StreamingResponse
 import json
-from typing import Optional
+
+
 
 from src.app.db import get_db
 from src.app.models import models
@@ -119,17 +121,23 @@ async def generate_job_description(
         f"The candidate should be skilled in the following tools: {tools_str}."
     )
 
+    client = OpenAI()
+
     async def generate():
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
+            stream = client.chat.completions.create(
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
-                stream=True
+                stream=True,
+                max_tokens=300
             )
-            for chunk in response:
-                yield json.dumps(chunk)  # Stream each chunk as JSON
-        except openai.error.OpenAIError as e:
-            raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+            full_content = ""
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    full_content += chunk.choices[0].delta.content
+            yield json.dumps({"content": full_content})
+        except Exception as e:
+            yield json.dumps({"error": str(e)})
 
     return StreamingResponse(generate(), media_type="application/json")
     
