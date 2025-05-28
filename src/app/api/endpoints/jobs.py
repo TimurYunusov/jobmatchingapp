@@ -3,11 +3,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.app.logging_config import logger
+from fastapi.responses import StreamingResponse
+import openai
+import json
+from typing import Optional
 
 from src.app.db import get_db
 from src.app.models import models
 from src.app.schemas import schemas
-from openai import OpenAI
 
 
 router = APIRouter()
@@ -96,19 +99,19 @@ async def generate_job_description(
     db: Session = Depends(get_db)
 ):
     logger.info(f"Generating job description for job ID: {id}")
-    # 1. Retrieve job posting
     job_posting = db.query(models.JobPosting).filter(models.JobPosting.id == id).first()
     if not job_posting:
         logger.error(f"Job posting with ID {id} not found")
         raise HTTPException(status_code=404, detail="Job posting not found")
 
-    # 2. Retrieve associated company info
     company = db.query(models.Company).filter(models.Company.id == job_posting.company_id).first()
     if not company:
         logger.error(f"Associated company for job ID {id} not found")
         raise HTTPException(status_code=404, detail="Associated company not found")
 
-    # 3. Build prompt using job and tool info
+    if not request.required_tools or not all(isinstance(tool, str) for tool in request.required_tools):
+        raise HTTPException(status_code=400, detail="Invalid required_tools input")
+
     tools_str = ", ".join(request.required_tools)
     prompt = (
         f"Write a detailed job description for the position '{job_posting.title}' "
@@ -116,27 +119,17 @@ async def generate_job_description(
         f"The candidate should be skilled in the following tools: {tools_str}."
     )
 
-    # 4. Call OpenAI API
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=300
-    )
+    async def generate():
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                stream=True
+            )
+            for chunk in response:
+                yield json.dumps(chunk)  # Stream each chunk as JSON
+        except openai.error.OpenAIError as e:
+            raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
 
-    generated_description = response.choices[0].message.content.strip()
-    generated_at = datetime.now(timezone.utc)
-
-    # 5. Update DB with description
-    job_posting.description = generated_description
-    db.commit()
-    db.refresh(job_posting)
-
-    logger.info(f"Job description generated for job ID: {id}")
-    # 6. Return response
-    return schemas.GenerateDescriptionResponse(
-        job_id=job_posting.id,
-        description=generated_description,
-        generated_at=generated_at
-    )
+    return StreamingResponse(generate(), media_type="application/json")
     
