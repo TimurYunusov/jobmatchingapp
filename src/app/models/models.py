@@ -15,10 +15,10 @@ class EmploymentType(str, Enum):
     contract = "CONTRACT"
 
 class JobPosting(Base):
-    __tablename__ = "jobPosting"  
+    __tablename__ = "job_posting"  
 
     id = Column(Integer, primary_key=True, index=True)
-    company_id = Column(Integer, ForeignKey("Company.id"))
+    company_id = Column(Integer, ForeignKey("company.id"))
     title = Column(String, nullable=False)
     compensation_min = Column(Float, nullable=True)
     compensation_max = Column(Float, nullable=True)
@@ -34,7 +34,7 @@ class JobPosting(Base):
     company = relationship("Company", back_populates="job_postings")
 
 class Company(Base):
-    __tablename__ = "Company"  # matches your Supabase table exactly
+    __tablename__ = "company"  # matches your Supabase table exactly
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)

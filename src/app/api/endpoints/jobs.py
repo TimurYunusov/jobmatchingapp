@@ -12,10 +12,10 @@ from openai import OpenAI
 
 router = APIRouter()
 
-@router.get("/job_postings")
+@router.get("/get_job_postings")
 def get_all_job_postings(db: Session = Depends(get_db)):
     logger.info("Fetching all job postings")
-    result = db.execute(text('SELECT * FROM "jobPosting"'))
+    result = db.execute(text('SELECT * FROM "job_posting"'))
     
     rows = result.fetchall()
 
@@ -39,7 +39,7 @@ def create_job(job_posting: schemas.JobPostingCreate, db: Session = Depends(get_
     db.add(job_model)
     db.commit()
     db.refresh(job_model)
-    logger.info(f"Job posting created with ID: {job_model.id}")
+    logger.info(f"Job posting created with ID: {job_model.id} and title: {job_model.title}")
     return job_model
 
 # ---------- READ ONE ----------
