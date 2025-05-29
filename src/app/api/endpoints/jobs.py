@@ -3,12 +3,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.app.logging_config import logger
 from fastapi.responses import StreamingResponse
-import openai
-from openai import OpenAI
-from fastapi.responses import StreamingResponse
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain.output_parsers import PydanticOutputParser
+from langchain.schema import HumanMessage
 import json
-
-
+from typing import List
+import os
+from datetime import datetime
 
 from src.app.db import get_db
 from src.app.models import models
@@ -93,7 +95,19 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     logger.info(f"Job posting with ID {job_id} deleted")
     return {"status": "success", "detail": f"Job posting {job_id} deleted"}
 
-# ---------- GENERATE DESCRIPTION ----------
+def init_chat_model():
+    return ChatOpenAI(
+        model="gpt-4",
+        streaming=True,
+        temperature=0.2,
+        max_tokens=500,
+        model_kwargs={
+            "top_p": 0.95,
+            "frequency_penalty": 0.5,
+            "presence_penalty": 0.5
+        }
+    )
+
 @router.post("/{id}/description", response_model=schemas.GenerateDescriptionResponse)
 async def generate_job_description(
     id: int,
@@ -114,30 +128,78 @@ async def generate_job_description(
     if not request.required_tools or not all(isinstance(tool, str) for tool in request.required_tools):
         raise HTTPException(status_code=400, detail="Invalid required_tools input")
 
-    tools_str = ", ".join(request.required_tools)
-    prompt = (
-        f"Write a detailed job description for the position '{job_posting.title}' "
-        f"at the company '{company.name}', which operates in the '{company.industry}' industry. "
-        f"The candidate should be skilled in the following tools: {tools_str}."
+    # Initialize the chat model
+    chat = init_chat_model()
+    
+    # Create the prompt template
+    system_template = """You are an expert job description writer. Create a detailed and professional job description 
+    that follows the specified structure. Focus on clarity, professionalism, and attracting qualified candidates."""
+    
+    human_template = """Create a job description for the following position:
+    
+    Job Title: {title}
+    Company: {company_name}
+    Industry: {industry}
+    Required Tools/Skills: {tools}
+    Location Type: {location_type}
+    Employment Type: {employment_type}
+    
+    Please structure the response with the following sections:
+    - Overview
+    - Responsibilities
+    - Requirements
+    - Qualifications
+    - Benefits
+    - Company Culture
+    - Location Information
+    - Compensation Information
+    
+    Make sure to highlight the required tools and skills throughout the description. If tools that listed is uknown, just don't mention it in description. 
+    Guardrail:
+    - Do not mention any tools that are not listed in the required tools.
+    - Do not mention any tools that are not known to the user.
+    - Do not mention any tools that are not known to the user. """
+    
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessagePromptTemplate.from_template(system_template),
+        HumanMessagePromptTemplate.from_template(human_template)
+    ])
+    
+    # Format the prompt with the job details
+    formatted_prompt = prompt.format_messages(
+        title=job_posting.title,
+        company_name=company.name,
+        industry=company.industry,
+        tools=", ".join(request.required_tools),
+        location_type=job_posting.location_type,
+        employment_type=job_posting.employment_type
     )
 
-    client = OpenAI()
+    try:
+        # Get the complete response
+        response = await chat.ainvoke(formatted_prompt)
+        full_content = response.content
 
-    async def generate():
-        try:
-            stream = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}],
-                stream=True,
-                max_tokens=300
-            )
-            full_content = ""
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    full_content += chunk.choices[0].delta.content
-            yield json.dumps({"content": full_content})
-        except Exception as e:
-            yield json.dumps({"error": str(e)})
+        # Parse the content into structured sections
+        structured_response = schemas.StructuredJobDescription(
+            title=job_posting.title,
+            overview=full_content.split("Responsibilities")[0].strip(),
+            responsibilities=[item.strip() for item in full_content.split("Responsibilities")[1].split("Requirements")[0].split("\n") if item.strip() and not item.strip().startswith(":")],
+            requirements=[item.strip() for item in full_content.split("Requirements")[1].split("Qualifications")[0].split("\n") if item.strip() and not item.strip().startswith(":")],
+            qualifications=[item.strip() for item in full_content.split("Qualifications")[1].split("Benefits")[0].split("\n") if item.strip() and not item.strip().startswith(":")],
+            benefits=[item.strip() for item in full_content.split("Benefits")[1].split("Company Culture")[0].split("\n") if item.strip() and not item.strip().startswith(":")],
+            company_culture=full_content.split("Company Culture")[1].split("Location Information")[0].strip() if "Company Culture" in full_content else None,
+            location_info=full_content.split("Location Information")[1].split("Compensation Information")[0].strip() if "Location Information" in full_content else None,
+            compensation_info=full_content.split("Compensation Information")[1].strip() if "Compensation Information" in full_content else None
+        )
 
-    return StreamingResponse(generate(), media_type="application/json")
+        return schemas.GenerateDescriptionResponse(
+            job_id=id,
+            description=full_content,  # Return the raw description as a string
+            generated_at=datetime.utcnow()
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating job description: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     

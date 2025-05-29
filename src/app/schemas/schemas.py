@@ -65,3 +65,18 @@ class CompanyUpdates(CompanyCreate):
 
 class CompanyDeletes(BaseModel):
     pass
+
+class JobDescriptionSection(BaseModel):
+    title: str
+    content: str
+
+class StructuredJobDescription(BaseModel):
+    title: str
+    overview: str
+    responsibilities: List[str]
+    requirements: List[str]
+    qualifications: List[str]
+    benefits: List[str]
+    company_culture: Optional[str] = None
+    location_info: Optional[str] = None
+    compensation_info: Optional[str] = None
